@@ -1,0 +1,22 @@
+shush
+include <color>
+
+// init
+
+enable window_mode "yagame"
+var test = 5
+
+// main
+
+func main
+var test = 5
+print test
+print "hello world"
+nl
+cprint 11 "sadas"
+() othermain
+
+func othermain
+return(0)
+
+enable color
