@@ -3,7 +3,19 @@
 #include <string>
 #include <algorithm>
 #include <sstream>
+#include <thread>
+#include <chrono>
 using namespace std;
+
+// Helper function to check if a string is a number
+bool isNumber(const string& str) {
+    return !str.empty() && all_of(str.begin(), str.end(), ::isdigit);
+}
+
+// Function to check if a string is an operator (for now it handles basic operators like ==, >, <, etc.)
+bool isOperator(const string& str) {
+    return str == "==" || str == ">" || str == "<" || str == ">=" || str == "<=" || str == "!=";
+}
 
 int main(int argc, char **argv) {
 	if (argc != 3) {
@@ -18,127 +30,124 @@ int main(int argc, char **argv) {
 
 	//all the tokens
     if (inputFile.is_open()) {
-		outputfile << "echo off\n";
-        while (inputFile >> word) {
-			word.erase(0, word.find_first_not_of(" \t"));
-            word.erase(word.find_last_not_of(" \t") + 1);
-			// Use this if you want to use a breakpoint
-			if (word == "breakpoint") {
-				outputfile << "set /p t=" << "\n";
-			}
-			// This returns of the program ran successfully
-            if (word == "return(0)") {
+		string line;
+        while (getline(inputFile, line)) {
+			stringstream ssline(line);
+			string token = line;
+			// Remove leading and trailing spaces
+			line.erase(0, line.find_first_not_of(" \t"));
+			line.erase(line.find_last_not_of(" \t") + 1);
+			
+			// Skip empty lines
+			if (line.empty()) continue;
+
+            string currentLine = "";
+
+			if (token == "return(0)") {
 				outputfile << "exit\n";
-			}
-			// This returns with a error
-			if (word == "return(1)") {
-				outputfile << "echo 'an error has occured'\n";
+				continue;
+			} else if (token == "return(1)") {
+				outputfile << "echo 'an error has occurred'\n";
 				outputfile << "exit\n";
-			}
-			if (word == "include") {
-				inputFile >> word;
-				// Include <color> is used if you want to use the CPrint command
-				if (word == "<color>") {
-					outputfile << "setlocal EnableDelayedExpansion\nfor /F \"tokens=1,2 delims=#\" %%a in ('\"prompt #$H#$E# & echo on & for %%b in (1) do rem\"') do (\nset \"DEL=%%a\"\n)\n";
-				}
+				continue;
+			} else if (token == "shush") {
+				outputfile << "echo off\n";
+				continue;
 			}
 
-			// Erase any extra spaces before or after a string
-            word.erase(0, word.find_first_not_of(" \t"));
-            word.erase(word.find_last_not_of(" \t") + 1);
+			if (line.substr(0, 10) == "breakpoint") {
+				outputfile << "pause\n";
+			}
 
-            // Handle "print:" token (special handling for quoted strings)
-            if (word == "print") {
-                // Read the next word (which should be a quoted string)
-                string content;
-                inputFile >> ws;  // Skip any whitespace
-                getline(inputFile, content);  // Get the full line after 'print:'
+			// Handle the 'print' statement (with quoted strings)
+			if (line.substr(0, 5) == "print") {
+				string content = line.substr(5);
+				content.erase(0, content.find_first_not_of(" \t"));  // Trim leading spaces
 				
-				if (content.front() != '"' && content.back() != '"') {
-					content = "%" + content + "%";
+				if (content.front() != '\"' && content.back() != '"') {
+					content = '%' + content + " %";  // Remove quotes
 				}
-                // Remove leading and trailing spaces from the content
-                content.erase(0, content.find_first_not_of(" \t"));
-                content.erase(content.find_last_not_of(" \t") + 1);
 
-                // If content starts and ends with quotes, remove them
-                if (!content.empty() && content.front() == '"' && content.back() == '"') {
-                    content = content.substr(1, content.length() - 2);  // Remove quotes
+				if (content.front() == '"' && content.back() == '"') {
+					content = content.substr(1, content.length() - 2);  // Remove quotes
+				}
+				outputfile << "echo " << content << "\n";
+				continue;
+			}
+
+			if (line.substr(0, 4) == "var ") {
+				string content = line.substr(4);
+				string whatequal = line.substr(content.length() + 4);
+				outputfile << "set " << content << whatequal << "\n";
+				continue;
+			}
+
+            // If the line starts with "if", process it accordingly
+            if (line.substr(0, 2) == "if") {
+                // Extract condition (between parentheses)
+                size_t startPos = line.find("(") + 1;
+                size_t endPos = line.find(")");
+                string condition = line.substr(startPos, endPos - startPos);
+                string word;
+
+                // Extract action (between curly braces)
+                startPos = line.find("{") - 1;
+                endPos = line.find("}") + 1;
+                string action = line.substr(startPos, endPos - startPos);
+
+                // Trim leading and trailing spaces from condition and action
+                condition.erase(0, condition.find_first_not_of(" \t"));
+                condition.erase(condition.find_last_not_of(" \t") + 1);
+
+                action.erase(0, action.find_first_not_of(" \t"));
+                action.erase(action.find_last_not_of(" \t") + 1);
+
+                // Process the condition: Wrap variables with % (if they are not numbers or operators)
+                stringstream ssCondition(condition);
+                string tokenInCondition;
+                string processedCondition = "";
+
+                while (ssCondition >> tokenInCondition) {
+                    // If the token is a variable (alphanumeric) and not a number, wrap it with %
+                    if (!isNumber(tokenInCondition) && !isOperator(tokenInCondition)) {
+                        processedCondition += "%" + tokenInCondition + " %";
+                    } else {
+                        // Otherwise, leave the token (numbers and operators) as they are
+                        processedCondition += tokenInCondition + " ";
+                    }
                 }
 
-                // Output the content as print("content")
-                outputfile << "echo " << content << "\n";
+                // Replace curly braces in the action with parentheses
+                replace(action.begin(), action.end(), '{', '(');
+                replace(action.begin(), action.end(), '}', ')');
+
+                // Output the processed if statement
+                outputfile << "if " << processedCondition << action << "\n";
+                continue;  // Skip to the next line after processing
             }
-			// This will create a new line in the compiled script
-			if (word == "nl") {
+			if (line.substr(0, 3) == "end")  {
+				outputfile << ")\n";
+			}
+			if (line.substr(0, 4) == "func") {
+				outputfile << ":" << line.substr(5) << "\n";
+			}
+			if (line.substr(0, 2) == "()") {
+				outputfile << "goto " << line.substr(3) << "\n";
+			}
+			if (line.substr(0, 7) == "include") {
+				if (line.substr(8) == "graphics") {
+					outputfile <<  "setlocal EnableDelayedExpansion\nfor /F \"tokens=1,2 delims=#\" %%a in ('\"prompt #$H#$E# & echo on & for %%b in (1) do rem\"') do (\nset \"DEL=%%a\"\n)\n";
+				}
+			}
+			if (line.substr(0, 6) == "enable") {
+				if (line.substr(7) == "color") {
+					outputfile << ":ColorText\necho off\n<nul set /p \".=%DEL%\" > \"%~2\"\nfindstr /v /a:%1 /R \"^$\" \"%~2\" nul\ndel \"%~2\" > nul 2>&1\nIF %ERRORLEVEL% == 1 goto :bluescreenofdeathuhoh\ngoto :eof\n";
+				}
+			}
+			if (line.substr(0, 6) == "cprint") {
+				string color = line.substr(7);
+				outputfile << "call :ColorText " << line.substr(7) << "\n";
 				outputfile << "echo.\n";
-			}
-			if (word == "cprint") {
-				inputFile >> word;
-				//this will get the color use windows command "help color" to see what values are what color
-				string input = word;
-				inputFile >> word;
-               
-                outputfile << "call :ColorText " << input << " " << word << "\n";
-			}
-			if (word == "enable") {
-				inputFile >> word;
-				// use this also to use CPrint
-				if (word == "color") {
-					outputfile << ":ColorText\necho off\n<nul set /p \".=%DEL%\" > \"%~2\"\nfindstr /v /a:%1 /R \"^$\" \"%~2\" nul\ndel \"%~2\" > nul 2>&1\ngoto :eof\n";
-				}
-				// Use this if you want a fullscreen ValleyOS program
-				if (word == "window_mode_fullscreen") {
-					outputfile << "call :ColorText 70 \"ValleyOS     File Edit View Window Help\"\ncall :ColorText 77 \"fhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh\"\necho. \n";
-				}
-				// Use this if you want a windowed ValleyOS program
-				if (word == "window_mode") {
-					// Read the next word (which should be a quoted string)
-					string content;
-					inputFile >> ws;  // Skip any whitespace
-					getline(inputFile, content);  // Get the full line after 'window_mode'
-				 
-					// Remove leading and trailing spaces from the content
-					content.erase(0, content.find_first_not_of(" \t"));
-					content.erase(content.find_last_not_of(" \t") + 1);
-	
-					// If content starts and ends with quotes, remove them
-					if (!content.empty() && content.front() == '"' && content.back() == '"') {
-						content = content.substr(1, content.length() - 2);  // Remove quotes
-					}
-					outputfile << "call :ColorText 70 \"ValleyOS     File Edit View Window Help\"\ncall :ColorText 77 \"fhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh\"\necho. \n";
-					outputfile << "echo.\necho.\necho.\necho.\necho.\necho.\n";
-					// set the title
-					outputfile << "call :ColorText 70 " << content << "\n";
-					outputfile << "call :ColorText 77 sdassadasdasd\n";
-					outputfile << "echo.\n";
-				}
-			}
-			// this declares a variable by using: var example = 5 but saying it is equal to something is
-			// optional and if you don't tell it to equal anything it will default to 0
-			if (word == "var") {
-				inputFile >> word;
-				outputfile << "set " << word;
-				inputFile >> word;
-				if (word != "=") {
-					outputfile << " = null\n";
-				}
-				if (word == "=") {
-					inputFile >> word;
-					outputfile << "=";
-					outputfile << word;
-					outputfile << "\n";
-				}
-			}
-			// This declares a function
-			if (word == "func") {
-				inputFile >> word;
-				outputfile << ":" << word << "\n";
-			}
-			// This will goto a function
-			if (word == "()") {
-				inputFile >> word;
-				outputfile << "goto :" << word << "\n";
 			}
 		}
         inputFile.close();

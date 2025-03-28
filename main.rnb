@@ -1,0 +1,21 @@
+echo off
+setlocal EnableDelayedExpansion
+for /F "tokens=1,2 delims=#" %%a in ('"prompt #$H#$E# & echo on & for %%b in (1) do rem"') do (
+set "DEL=%%a"
+)
+set rdad = 3
+if %rdad %== 3 (
+echo deez tesdg
+)
+:test
+echo hello
+call :ColorText 70 "cooler hello"
+echo.
+exit
+:ColorText
+echo off
+<nul set /p ".=%DEL%" > "%~2"
+findstr /v /a:%1 /R "^$" "%~2" nul
+del "%~2" > nul 2>&1
+IF %ERRORLEVEL% == 1 goto :bluescreenofdeathuhoh
+goto :eof

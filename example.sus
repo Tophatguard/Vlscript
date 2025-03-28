@@ -1,22 +1,30 @@
 shush
-include <color>
+include graphics
+var rdad = 3
+if (rdad == 3) {
+    print "deez tesdg"
+    end
+}
 
-// init
-
-enable window_mode "yagame"
-var test = 5
-
-// main
-
-func main
-var test = 5
-print test
-print "hello world"
-nl
-cprint 11 "sadas"
-() othermain
-
-func othermain
+func test
+    print "hello"
+    cprint 70 "cooler hello"
 return(0)
-
 enable color
+
+//tokens:
+//func <function>
+//var <input>
+//if <what> do <what>
+//breakpoint
+//return(0)
+//return(1)
+//enable window_mode_fullscreen
+//enable window_mode
+//enable color
+//shush
+//include <color>
+//nl
+//cprint <what to print>
+//print <what>
+//() <goto>
